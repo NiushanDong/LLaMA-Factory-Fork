@@ -23,7 +23,7 @@ from transformers.utils.versions import require_version
 from ..extras import logging
 from ..extras.constants import FILEEXT2TYPE
 from ..extras.misc import has_tokenized_data
-from .aligner import align_dataset, aif_align_dataset
+from .aligner import align_dataset
 from .data_utils import merge_dataset, split_dataset
 from .parser import get_dataset_list
 from .preprocess import get_preprocess_and_print_func
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from .template import Template
 
 from datasets import Dataset
-from .preprocess import aif_get_preprocess_and_print_func
+from .preprocess import get_preprocess_and_print_func
 
 
 logger = logging.get_logger(__name__)
@@ -158,7 +158,7 @@ def _load_single_dataset(
     if dataset_id is not None:
         dataset = dataset.add_column("dataset_id", [dataset_id] * len(dataset))
 
-    return aif_align_dataset(dataset, dataset_attr, data_args, training_args)
+    return align_dataset(dataset, dataset_attr, data_args, training_args)
 
 
 def _get_merged_dataset(
@@ -180,7 +180,7 @@ def _get_merged_dataset(
         if (stage == "rm" and dataset_attr.ranking is False) or (stage != "rm" and dataset_attr.ranking is True):
             raise ValueError("The dataset is not applicable in the current training stage.")
         dataset_id = dataset_idx if append_dataset_id else None
-        datasets.append(_aif_load_single_dataset(dataset_attr, model_args, data_args, training_args, dataset_id=dataset_id))
+        datasets.append(_load_single_dataset(dataset_attr, model_args, data_args, training_args, dataset_id=dataset_id))
 
     return merge_dataset(datasets, data_args, seed=training_args.seed)
 
@@ -201,7 +201,7 @@ def _get_preprocessed_dataset(
     if dataset is None:
         return None
 
-    preprocess_func, print_function = aif_get_preprocess_and_print_func(
+    preprocess_func, print_function = get_preprocess_and_print_func(
         data_args, stage, template, tokenizer, processor, do_generate=(training_args.predict_with_generate and is_eval)
     )
     column_names = list(next(iter(dataset)).keys())
@@ -274,14 +274,14 @@ def get_dataset(
     with training_args.main_process_first(desc="load dataset"):
         # 因为有时候eval_dataset是从train_dataset中切分出来的，所以需要append_dataset_id=True, 等切分好之后再移除dataset_id列
         append_dataset_id = True if data_args.eval_one_by_one else False
-        dataset = _aif_get_merged_dataset(data_args.dataset, model_args, data_args, training_args, stage, append_dataset_id=append_dataset_id)
-        eval_dataset = _aif_get_merged_dataset(data_args.eval_dataset, model_args, data_args, training_args, stage, append_dataset_id=append_dataset_id)
+        dataset = _get_merged_dataset(data_args.dataset, model_args, data_args, training_args, stage, append_dataset_id=append_dataset_id)
+        eval_dataset = _get_merged_dataset(data_args.eval_dataset, model_args, data_args, training_args, stage, append_dataset_id=append_dataset_id)
 
     with training_args.main_process_first(desc="pre-process dataset"):
-        dataset = _aif_get_preprocessed_dataset(
+        dataset = _get_preprocessed_dataset(
             dataset, data_args, training_args, stage, template, tokenizer, processor, is_eval=False
         )
-        eval_dataset = _aif_get_preprocessed_dataset(
+        eval_dataset = _get_preprocessed_dataset(
             eval_dataset, data_args, training_args, stage, template, tokenizer, processor, is_eval=True
         )
 
@@ -320,7 +320,7 @@ def get_dataset(
         if "validation" in dataset_dict:
             if data_args.eval_one_by_one:
                 dataset_names = data_args.eval_dataset if data_args.eval_dataset is not None else data_args.dataset
-                dataset_module["eval_dataset"] = aif_split_eval_dataset(dataset_dict["validation"], dataset_names)
+                dataset_module["eval_dataset"] = split_eval_dataset(dataset_dict["validation"], dataset_names)
             else:
                 dataset_module["eval_dataset"] = dataset_dict["validation"]
 
@@ -332,7 +332,7 @@ def get_dataset(
             "train_dataset": total_train_batch_size * 10,
             "eval_dataset": total_eval_batch_size * 10
         }
-        longest_dataset_module = _aif_get_longest_dataset_module(dataset_module, datasets_lens)
+        longest_dataset_module = _get_longest_dataset_module(dataset_module, datasets_lens)
         return dataset_module, longest_dataset_module
 
 
