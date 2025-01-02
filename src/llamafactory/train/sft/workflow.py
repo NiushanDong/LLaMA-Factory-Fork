@@ -50,9 +50,6 @@ def run_sft(
     generating_args: "GeneratingArguments",
     callbacks: Optional[List["TrainerCallback"]] = None,
 ):
-    # 通过回调函数，添加global_step到log
-    # callbacks.append(AIFCustomLogCallback())
-    
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
@@ -100,6 +97,7 @@ def run_sft(
     temp_training_args.load_best_model_at_end = False # 不保存最佳模型
     temp_training_args.report_to = [] # 不保存日志
     temp_training_args.learning_rate = 0.0
+    temp_training_args.include_num_input_tokens_seen = False
     trainer = CustomSeq2SeqTrainer(
         model=model,
         args=temp_training_args,
